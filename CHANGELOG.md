@@ -1,3 +1,124 @@
+# v0.5.6 (2019-03-22)
+
+ - Updated version of redis, pika, pyyaml, scp, pytest
+ - Cleanly shutdown poseidon container on `poseidon stop`
+ - Add an experimental `pcap` option to the poseidon command
+ - Remove BCF filter rules on poseidon stop and remove any previous filters on start
+ - Cleanup BCF response code when calling the API
+
+# v0.5.5 (2019-03-08)
+
+ - Packaged versions of components, including vent-plugins v0.1.0, posiedonml v0.2.9, and vent v0.8.0
+ - Fixed role bug in CLI
+ - Added more test coverage to get back up to 90%
+ - Updated version of pip, pylint
+ - Fix crashing bugs in the CLI
+ - Made fields and field names consistent in the CLI and the API
+ - Added the tool a particular field came from if it wasn't Poseidon directly
+ - Can now toggle IPv4 and IPv6 in the CLI
+
+# v0.5.4 (2019-02-22)
+
+ - Updated version of prometheus, pytest, redis, texttable
+ - Fixed issues where the shell can crash
+ - Changed 'device type' in CLI to 'role'
+ - Added 'quit' and 'exit' aliases in the CLI
+ - Fixed bug where 'unknown' wasn't getting output correctly in the CLI
+ - Fixed multi-word args in the CLI to not use spaces
+ - Better help summary in the CLI
+ - Add OUI ethernet vendor lookups
+ - Add rDNS lookups
+ - Add '?' functionality in the CLI
+ - Updated the default list of fields in the CLI
+ - Split out role and confidence to different fields in the CLI
+ - Changed 'UNDEFINED' to 'NO DATA'
+ - Updated the CLI commands to have a more intuitive flow
+
+# v0.5.3 (2019-02-08)
+
+ - Updated version of httmock, redis, pip, pytest
+ - Ability to build both net and regular poseidon packages easier in Make now
+ - Can use the 'all' field sepcifier in the CLI to get all fields
+ - Added new configuration option: trust_self_signed_cert which defaults to True
+ - Output from external sources such as PoseidonML, p0f, etc. now show results in the CLI
+ - Fixed fields of mixed types so they can be used to sort by in the CLI
+ - Original header is preserved when overriding fields in CLI
+ - Updated and improved documentation for using BCF
+ - Fixed an error where results from PoseidonML were sometimes not retrieved
+ - Fixed an error where duplicate records were showing up in the CLI
+ - Fixed an error where endpoints that were already mirroring superceded queued endpoints
+ - `poseidon reset` now clears out the Redis database
+ - Fixed port and switch output in the CLI for BCF results
+ - Finished implementing specific show commands in the CLI
+ - BCF API response codes are now parsed and logged appropriately
+ - Action commands in the CLI now work, including changing state and collecting, via changing to say a mirror state
+ - Fixed the poseidon shell script to handle if the poseidon-net package was installed
+ - Updated Docker images to use alpine 3.9
+ - Fixed a serious bug that cause BCF to no longer work with Poseidon due it not being able to create filters by MAC address
+
+# v0.5.2 (2019-01-25)
+
+ - Updated version of pytest, pika, texttable, schedule
+ - Added first version of CLI, accessed with `poseidon shell`
+ - Can now query endpoint information like what state and when
+ - Can now clear out inactive endpoints or ignore specific endpoints
+ - Pin pip to a version
+
+# v0.5.1 (2019-01-11)
+
+ - Improved logging output
+ - Updated version of gevent, pytest, pytest-cov
+ - Made use of sed more stable across platforms
+ - Added an additional debian package poseidon-net that is slim and downloads images after installation
+ - Ensure that timeout exists in faucet config before trying to remove/change it
+
+# v0.5.0 (2018-12-28)
+
+ - BREAKING CHANGES!
+ - Updated Redis key storage - need to clean out redis DB upon upgrade
+ - Updated Prometheus labels - need to clean out prometheus DB upon upgrade
+ - Updated API with different fields
+ - Redis is now updated from Poseidon directly
+ - Split out ip address to both ipv4 and ipv6
+ - Cleaned up containers on reconfig
+ - Poseidon start will recreate images if they were removed
+ - Keeps state of endpoints across restarts
+ - Actually checks if collector response succeeded or not
+ - Only creates a tap if the mirror was successful
+ - Fixes issue where changes to the faucet.yaml file weren't taking effect inside the container
+ - Added extra transitions for external services changing state of endpoints
+ - Prioritizes queued endpoints over reinvestigations
+ - Made default_ip more robust when whening more than one
+ - Cleaned up API to use standard libraries and reduce duplication
+ - Controller updates switch config when an endpoint expires
+ - Ignores learn events for endpoints that are already being investigated
+ - Cleans up mirrors on restarts
+ - Updates Vent to stop captures on expired endpoints
+ - All states of endpoints get stored periodically from Poseidon now, so it is consistent
+
+# v0.4.0 (2018-12-14)
+
+ - Updated version of pytest, urllib3, requests, scp, pylint, certifi, redis, prometheus_client
+ - Restructred the code base into a more simplified architecture
+ - Replaced the custom state machine with pytransitions to make it more reliable
+ - Cleaned up logging to be more readable at an INFO level and more useful at a DEBUG level
+ - Various bug fixes along the way
+
+# v0.3.6 (2018-10-22)
+
+ - Updated version of pytest, gunicorn, prometheus_client, urllib3, scp, gevent, certifi, requests
+ - Fixed a few typos
+ - Fixed L2 timeout compared with ARP timeout for Faucet
+ - Fixed creation of files/dirs at container start time for volumes
+ - Added some developer instructions to the Readme
+
+# v0.3.5 (2018-09-21)
+
+ - Added an inactive state
+ - Fixed operating system results from p0f
+ - Fixes roles results from PoseidonML
+ - Fixed log file creation and rotation
+
 # v0.3.4 (2018-09-10)
 
  - Updated version of pytest and pytest-cov

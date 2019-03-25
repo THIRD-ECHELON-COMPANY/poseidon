@@ -1,38 +1,29 @@
 #!/bin/bash
 
-# reset configuration (db_purge)
-# version
-# configure
-# logs
-# restart
-# status
-# start
-# stop
-# show current configuration
-
 function logging()
 {
-    docker logs -f cyberreboot-vent-syslog-master | \
+    docker logs -f "$(docker ps | grep "\-syslog\-" | awk '{print $1}')" | \
     while read -r line ; do
         echo "$line" | grep -v 'poseidon-api' | grep -i 'poseidon' | awk '{$1=$2=$3=""; print $0}' | sed -e 's/^[ \t]*//'
     done
-
 }
 
 function show_help()
 {
     local version
-    version=$(dpkg -s poseidon | grep '^Version:' | cut -d' ' -f2-)
+    version=$( (dpkg -s poseidon || dpkg -s poseidon-net) | grep '^Version:' | cut -d' ' -f2-)
     echo "Poseidon $version, an application that leverages software defined networks (SDN) to acquire and then feed network traffic to a number of machine learning techniques. For more info visit: https://github.com/CyberReboot/poseidon
 
 Usage: poseidon [option]
 Options:
     -a,  api           get url to the Poseidon API
     -c,  config        display current configuration info
+    -e,  shell         enter into the Poseidon shell, requires Poseidon to already be running
     -h,  help          print this help
     -i,  info/status   display current status of the Poseidon service
     -l,  logs          display the information logs about what Poseidon is doing
     -L,  system-logs   display the system logs related to Poseidon
+    -p,  pcap          process a PCAP file or directory of PCAPs *EXPERIMENTAL* (uses sudo)
     -R,  reconfig      reconfigures all settings (uses sudo, will restart the Poseidon service)
     -r,  restart       restart the Poseidon service (uses sudo)
     -s,  start         start the Poseidon service (uses sudo)
@@ -42,7 +33,8 @@ Options:
     -Z,  reset         reset the configuration (uses sudo)"
 }
 
-function die() {
+function die()
+{
     printf '%s\n' "$1" >&2
     exit 1
 }
@@ -55,11 +47,11 @@ function check_args()
     while :; do
         case $1 in
             -a|api)
-                if [ "$(docker ps -q --filter "name=cyberreboot-poseidon-api-master" | wc -l)" -eq 1 ]; then
-                    port_map=$(docker port cyberreboot-poseidon-api-master 8000/tcp)
+                if [ "$(docker ps -q --filter "label=vent.namespace=cyberreboot/poseidon" --filter "label=vent.name=api" | wc -l)" -eq 1 ]; then
+                    port_map=$(docker port "$(docker ps -q --filter "label=vent.namespace=cyberreboot/poseidon" --filter "label=vent.name=api")" 8000/tcp)
                     port=$(echo "$port_map" | cut -d':' -f2)
-                    default_iface=$(awk '$2 == 00000000 { print $1 }' /proc/net/route)
-                    default_ip=$(ip addr show dev "$default_iface" | awk '$1 ~ /^inet/ { sub("/.*", "", $2); print $2 }' | head -1)
+                    default_iface=$(ip route list | head -1 | awk '{print $5}')
+                    default_ip=$(ip addr show dev "$default_iface" | awk '$1 == "inet" { sub("/.*", "", $2); print $2 }' | head -1)
                     echo "Poseidon API endpoints are accessible here: http://$default_ip:$port/v1"
                 else
                     echo "Poseidon API is not running."
@@ -75,42 +67,74 @@ function check_args()
                 exit
                 ;;
             -i|info|status)
-                systemctl status poseidon
+                systemctl status poseidon || systemctl status poseidon-net
                 exit
                 ;;
             -k|kill)
                 # don't call this directly - intended for systemd
+                docker ps -q --filter "label=vent.namespace=cyberreboot/poseidon" --filter "label=vent.name=" | (xargs docker kill --signal=SIGINT > /dev/null 2>&1) || echo "Poseidon is not running."
+                sleep 5
                 docker ps -q --filter "label=vent" | (xargs docker rm -f > /dev/null 2>&1) || echo "Poseidon containers not running."
                 docker rm -f vent > /dev/null 2>&1
                 exit
                 ;;
             -l|logs)
-                tail -n 100 -f /var/log/poseidon.log
+                tail -n 100 -f /var/log/poseidon/poseidon.log
                 exit
                 ;;
             -L|system-logs)
-                journalctl -n 100 -f -u poseidon
+                journalctl -n 100 -f -u poseidon || journalctl -n 100 -f -u poseidon-net
+                exit
+                ;;
+            -p|pcap)
+                if [ -z "$2" ]; then
+                    echo "Please supply the path to the PCAP(s) to process."
+                else
+                    if [[ -d "$2" ]]; then
+                        for line in $(find "$2" -name '*.pcap'); do
+                            filename=$(echo "$line" | rev | cut -d/ -f1 | rev)
+                            sudo cp "$line" /opt/vent_files/trace_"$filename"
+                        done
+                    elif [[ -f "$2" ]]; then
+                        filename=$(echo "$2" | rev | cut -d/ -f1 | rev)
+                        sudo cp "$2" /opt/vent_files/trace_"$filename"
+                    else
+                        echo "$2 is not a valid path."
+                    fi
+                fi
                 exit
                 ;;
             -R|reconfig)
-                sudo dpkg-reconfigure poseidon
+                sudo dpkg-reconfigure poseidon || sudo dpkg-reconfigure poseidon-net
                 exit
                 ;;
             -r|restart)
                 # TODO add some verbosity
+                echo "Checking volumes..."
+                check_files
                 echo "Restarting Poseidon..."
-                sudo systemctl restart poseidon
+                sudo systemctl restart poseidon || sudo systemctl restart poseidon-net
                 echo "done."
+                exit
+                ;;
+            -e|shell)
+                if [ "$(docker ps -q --filter "label=vent.namespace=cyberreboot/poseidon" --filter "label=vent.name=" | wc -l)" -eq 1 ]; then
+                    docker exec -it "$(docker ps -q --filter "label=vent.namespace=cyberreboot/poseidon" --filter "label=vent.name=")" python3 /poseidon/poseidon/cli/cli.py
+                else
+                    echo "Poseidon isn't running, you must first start Poseidon to use the shell."
+                fi
                 exit
                 ;;
             -s|start)
                 if [ "$(docker ps -q --filter "name=vent" | wc -l)" -eq 1 ]; then
                    echo "Found at least part of Poseidon already running, cleaning up first."
-                   sudo systemctl stop poseidon
+                   sudo systemctl stop poseidon || sudo systemctl stop poseidon-net
                 fi
                 if [ "$2" = "-D" ]; then
+                    echo "Checking volumes..."
+                    check_files
                     echo "Starting Poseidon..."
-                    docker run -dit --rm -v /var/run/docker.sock:/var/run/docker.sock -v /opt/vent_files:/opt/vent_files -v /opt/poseidon/.plugin_config.yml:/root/.plugin_config.yml -v /opt/poseidon/.vent_startup.yml:/root/.vent_startup.yml --env-file /etc/poseidon/default.conf --name vent cyberreboot/vent
+                    docker run -dit --rm -v /var/run/docker.sock:/var/run/docker.sock -v /opt/vent_files:/opt/vent_files -v /opt/poseidon/.plugin_config.yml:/root/.plugin_config.yml -v /opt/poseidon/.vent_startup.yml:/root/.vent_startup.yml --env-file /etc/poseidon/default.conf --name vent cyberreboot/vent:v0.8.1
                     until [ "$(docker ps -q -f name=-poseidon-)" ] && [ "$(docker ps -q -f name=-poseidon- | head -1 | xargs docker container inspect -f \{\{.State.Health.Status\}\})" = "healthy" ]
                     do
                         # TODO do more checks and be verbose in here
@@ -121,19 +145,19 @@ function check_args()
                     echo "Poseidon successfully started, capturing logs..."
                     logging
                 else
-                    sudo systemctl start poseidon
+                    sudo systemctl start poseidon || sudo systemctl start poseidon-net
                     poseidon info
                 fi
                 exit
                 ;;
             -S|stop)
                 echo "Stopping Poseidon..."
-                sudo systemctl stop poseidon && echo "Poseidon successfully stopped."
+                (sudo systemctl stop poseidon || sudo systemctl stop poseidon-net) && echo "Poseidon successfully stopped."
                 exit
                 ;;
             -v|viz|visualize)
-                if [ "$(docker ps -q --filter "name=cyberreboot-crviz-master" | wc -l)" -eq 1 ]; then
-                    port_map=$(docker port cyberreboot-crviz-master 5000/tcp)
+                if [ "$(docker ps -q --filter "label=vent.namespace=cyberreboot/crviz" --filter "label=vent.name=" | wc -l)" -eq 1 ]; then
+                    port_map=$(docker port "$(docker ps -q --filter "label=vent.namespace=cyberreboot/crviz" --filter "label=vent.name=")" 5000/tcp)
                     port=$(echo "$port_map" | cut -d':' -f2)
                     default_iface=$(awk '$2 == 00000000 { print $1 }' /proc/net/route)
                     default_ip=$(ip addr show dev "$default_iface" | awk '$1 ~ /^inet/ { sub("/.*", "", $2); print $2 }' | head -1)
@@ -145,18 +169,19 @@ function check_args()
                 exit
                 ;;
             -V|version)
-                version=$(dpkg -s poseidon | grep '^Version:' | cut -d' ' -f2-)
+                version=$( (dpkg -s poseidon || dpkg -s poseidon-net) | grep '^Version:' | cut -d' ' -f2-)
                 echo "Poseidon $version"
                 exit
                 ;;
             -Z|reset)
                 sudo cp /etc/poseidon/default.conf /etc/poseidon/default.conf.bkp
-                echo PURGE | sudo debconf-communicate poseidon > /dev/null
+                echo PURGE | (sudo debconf-communicate poseidon || sudo debconf-communicate poseidon-net) > /dev/null
                 echo "# Generated from debconf - do not edit by hand, to change configuration options run: poseidon reconfig" | sudo tee /etc/poseidon/default.conf > /dev/null
                 echo "#" | sudo tee -a /etc/poseidon/default.conf > /dev/null
                 echo "#" | sudo tee -a /etc/poseidon/default.conf > /dev/null
                 echo "" | sudo tee -a /etc/poseidon/default.conf > /dev/null
-                sudo dpkg-reconfigure poseidon
+                sudo rm -rf /opt/redis
+                sudo dpkg-reconfigure poseidon || sudo dpkg-reconfigure poseidon-net
                 exit
                 ;;
             ?*)
@@ -169,9 +194,49 @@ function check_args()
     done
 }
 
+function check_files()
+{
+    if [ ! -d /var/log/faucet ]; then
+        sudo mkdir -p /var/log/faucet
+    fi
+    if [ -d /var/log/faucet/faucet.log ]; then
+        sudo rm -rf /var/log/faucet/faucet.log
+    fi
+    if [ -d /var/log/faucet/faucet_exception.log ]; then
+        sudo rm -rf /var/log/faucet/faucet_exception.log
+    fi
+    if [ ! -f /var/log/faucet/faucet.log ]; then
+        sudo touch /var/log/faucet/faucet.log
+    fi
+    if [ ! -f /var/log/faucet/faucet_exception.log ]; then
+        sudo touch /var/log/faucet/faucet_exception.log
+    fi
+
+    if [ ! -d /var/log/poseidon ]; then
+        sudo mkdir -p /var/log/poseidon
+        sudo chmod -R 755 /var/log/poseidon
+    fi
+    if [ -d /var/log/poseidon/poseidon.log ]; then
+        sudo rm -rf /var/log/poseidon/poseidon.log
+    fi
+    if [ ! -f /var/log/poseidon/poseidon.log ]; then
+        sudo touch /var/log/poseidon/poseidon.log
+    fi
+
+    if [ ! -d /etc/faucet/ ]; then
+        sudo mkdir -p /etc/faucet/
+    fi
+    if [ -d /etc/faucet/faucet.yaml ]; then
+        sudo rm -rf /etc/faucet/faucet.yaml
+    fi
+    if [ ! -f /etc/faucet/faucet.yaml ]; then
+        sudo touch /etc/faucet/faucet.yaml
+    fi
+}
+
 # entry point
 if [ $# -gt 0 ]; then
-    if [[ ( $# -eq 2 && $1 == "start" ) || ( $# -eq 1 ) ]]; then
+    if [[ ( $# -eq 2 && $1 == "start" ) || ( $# -eq 2 && $1 == "pcap" ) || ( $# -eq 2 && $1 == "-p" ) || ( $# -eq 1 ) ]]; then
         check_args "$@"
     else
         show_help

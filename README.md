@@ -5,12 +5,13 @@
 [![codecov](https://codecov.io/gh/CyberReboot/poseidon/branch/master/graph/badge.svg?token=ORXmFYC3MM)](https://codecov.io/gh/CyberReboot/poseidon)
 [![Codacy Badge](https://api.codacy.com/project/badge/Grade/e31df16fa65447bf8527e366c6271bf3)](https://www.codacy.com/app/CyberReboot/poseidon?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=CyberReboot/poseidon&amp;utm_campaign=Badge_Grade)
 [![Docker Hub Downloads](https://img.shields.io/docker/pulls/cyberreboot/poseidon.svg)](https://hub.docker.com/r/cyberreboot/poseidon/)
+[![Latest Version @ Cloudsmith](https://api-prd.cloudsmith.io/badges/version/cyberreboot/poseidon/deb/poseidon/latest/d=ubuntu%252Ftrusty/?render=true)](https://cloudsmith.io/~cyberreboot/repos/poseidon/packages/)
 
 > Software Defined Network Situational Awareness
 
 <img src="/docs/img/poseidon-logo.png" width="50" height="75"/><a href="https://www.blackducksoftware.com/open-source-rookies-2016" ><img src="/docs/img/Rookies16Badge_1.png" width="100" alt="POSEIDON is now BlackDuck 2016 OpenSource Rookie of the year"></a>
 
-Poseidon is a joint effort between two of the IQT Labs: [Cyber Reboot](https://www.cyberreboot.org/) and [Lab41](http://www.lab41.org/). The project's goal is to explore approaches to better identify what nodes are on a given (computer) network and understand what they are doing.  The project utilizes Software Defined Networking and machine learning to automatically capture network traffic, extract relevant features from that traffic, perform classifications through trained models, convey results, and provide mechanisms to take further action. While the project works best leveraging modern SDNs, parts of it can still be used with little more than packet capture (pcap) files.
+Poseidon began as a joint effort between two of the IQT Labs: [Cyber Reboot](https://www.cyberreboot.org/) and [Lab41](http://www.lab41.org/). The project's goal is to explore approaches to better identify what nodes are on a given (computer) network and understand what they are doing.  The project utilizes Software Defined Networking and machine learning to automatically capture network traffic, extract relevant features from that traffic, perform classifications through trained models, convey results, and provide mechanisms to take further action. While the project works best leveraging modern SDNs, parts of it can still be used with little more than packet capture (pcap) files.
 
 ## Table of Contents
 
@@ -37,8 +38,8 @@ The Poseidon project originally began as an experiment to test the merits of lev
   - Currently supported versions for the .DEB install are:
     - Ubuntu 14.04
     - Ubuntu 16.04
-    - Ubuntu 17.10
     - Ubuntu 18.04
+    - Ubuntu 18.10
 - [Docker](https://www.docker.com/) - Poseidon and related components run on top of Docker, so understanding the fundamentals will be useful for troubleshooting as well. [A Good Ubuntu Docker Quick-Start](https://www.digitalocean.com/community/tutorials/how-to-install-and-use-docker-on-ubuntu-16-04)
 - ~10GB of free disk space
 - An SDN Controller - specifically [BigSwitch Cloud Fabric](https://www.bigswitch.com/community-edition) or [Faucet](https://faucet.nz/) - if you want full functionality.
@@ -47,7 +48,7 @@ The Poseidon project originally began as an experiment to test the merits of lev
 
 ## Installing
 
-On Ubuntu, this will download and install our `.deb` package from [Cloudsmith](https://cloudsmith.io/package/ns/cyberreboot/repos/poseidon/packages/).
+On Ubuntu, this will download and install our `.deb` package from [Cloudsmith](https://cloudsmith.io/~/cyberreboot/repos/poseidon/packages/).
 ```
 sudo usermod -aG docker $USER
 sudo apt-get install -y apt-transport-https curl
@@ -57,18 +58,21 @@ sudo apt-get update
 sudo apt-get install poseidon
 ```
 
-Note: The installer has a `Demo` option in the installation wizard that will deploy and configure the full Poseidon package, the Faucet SDN contoller (and related components like Grafana and Prometheus), mininet, and openvswitch.  We suggest the demo install as a starting point if much of this is new to you.
+If you prefer a lightweight package that downloads the images from the latest build at install time, you can alternatively install: `sudo apt-get install poseidon-net`
+
+> Note: The installer has a `Demo` option in the installation wizard that will deploy and configure the full Poseidon package, the Faucet SDN contoller (and related components like Grafana and Prometheus), mininet, and openvswitch.  We suggest the demo install as a starting point if much of this is new to you.
 
 
 ## SDN Controller Configuration
 If you opt to do a full install (NOT the demo mode), you need to first identify one of the two supported controllers (*BigSwitch Cloud Fabric* or *Faucet*). The controller needs to be running and accessible (via network API) by the Poseidon system.  We recommend making sure the SDN portion is configured BEFORE the above Poseidon installation, but it's not a hard requirement.
 
-#### Big Cloud Fabric Configuration
+#### BigSwitch Big Cloud Fabric Configuration
 <img src="/docs/img/bcf.png" width="114" height="100"/>
-You will need to add support for moving arbitrary endpoint network data around your network.  The BigSwitch config will need an admin to add:
+You will need to access the API of your Big Cloud Fabric (BCF) controller using authorized credentials (user/pass) and you will need to add support in your BCF controller for moving mirrored endpoint network data around your network. In BCF, allowing port mirroring for Poseidon is done using 1) the "span-fabric" feature and 2) identifying a switch interface to send the captured ("spanned") traffic out of. The BigSwitch config will need an admin to add:
 
-- span-fabric
-- interface-group
+
+- span-fabric: you need to define a fabric-wide port mirroring mechanism and give it a name (e.g. 'poseidon')
+- interface-group: you need to identify which port the mirrored traffic is going to egress from, and name it (e.g. 'ig1')
 
 ##### Span Fabric
 
@@ -92,7 +96,29 @@ interface-group <interface-group>
   member switch YOUR_LEAF_SWITCH interface YOUR_INTERFACE_WHERE_VENT_WILL_RECORD_TRAFFIC_FROM
 ```
 
-Poseidon will connect to BCF controller using its REST API, so you'll need the BCF API IP address and credentials to it.
+Poseidon will connect to the BCF controller using its REST API, so you will also need the BCF API hostname or IP address and credentials for the controller. If your controller is an HA pair and has a virtual IP address, we recommend using that virtual address. Also, because Poseidon will be making dynamic `filter` rule changes we will need an account that has administrative priveleges.  (Poseidon only modifies the filter rules of the defined span-fabric, but until BigSwitch has more granular access control options this means admin privs!) Bringing the above configuration requirements together, below is an example of what the relevant parts of your BCF configuration could look like where the span-fabric is called 'poseidon', the user 'poseidon' is defined for API access, and the egress interface is interface '48' on switch 'leaf04' and labelled as interface group 'ig1':
+
+```
+! user
+user poseidon
+  hashed-password method=PBKDF2WithHmacSHA512,salt=M4534fcV1Ksg_fNm2pGQ,rounds=25000,ph=true,eWNHYUPVAUYosBVRguJnkmAzM
+
+! group
+group admin
+  associate user poseidon
+
+! interface-group
+interface-group ig1
+  description 'Mirroring for Poseidon'
+  mode span-fabric
+  member switch leaf04 interface ethernet48
+
+! span-fabric
+span-fabric poseidon
+  active
+  destination interface-group ig1
+  priority 1
+```
 
 BCF is now configured and ready for use with Poseidon.
 
@@ -114,12 +140,12 @@ Faucet is now configured and ready for use with Poseidon.
 
 ## Usage
 
-NEW: If you have used the .DEB installer, Poseidon is now packaged as a standard Linux service, and ties in nicely to both systemctl and journalctl.
+NEW: If you have used the .DEB installer previously, it is worth noting that Poseidon is now packaged as a standard Linux service, and ties in nicely to both systemctl and journalctl.
 
 After installation you'll have a new command `poseidon` available for looking at the status, logs, changing the configuration, or stopping and starting the service.
 ```
 $ poseidon help
-Poseidon 0.3.0, an application that leverages software defined networks (SDN) to acquire and then feed network traffic to a number of machine learning techniques. For more info visit: https://github.com/CyberReboot/poseidon
+Poseidon 0.3.6, an application that leverages software defined networks (SDN) to acquire and then feed network traffic to a number of machine learning techniques. For more info visit: https://github.com/CyberReboot/poseidon
 
 Usage: poseidon [option]
 Options:
@@ -138,37 +164,39 @@ Options:
 
 ```
 
-Poseidon makes heavy use of a sister project, [vent](https://vent.readthedocs.io/en/latest/?badge=latest). With a succesful installation you should minimally see a combination of Poseidon and Vent components, to include:
+Poseidon makes heavy use of a sister project, [vent](https://vent.readthedocs.io/en/latest/?badge=latest). With a successful installation you should minimally see a combination of Poseidon and Vent components, to include:
 
 1. The following 14 containers with a "(healthy)" STATUS listed (NOTE: this is truncated output):
 ```
 # docker ps
-CONTAINER ID        IMAGE                                  COMMAND                  STATUS  
+CONTAINER ID        IMAGE                                  COMMAND                  STATUS
 8c07adf421fb        cyberreboot/poseidon:master            "/bin/sh -c '(flask …"   Up 2 hours (healthy)
 0a4f947f299b        cyberreboot/vent-file-drop:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)
-511f90c6ddd3        cyberreboot/crviz:master               "serve -s build -l 5…"   Up 2 hours (healthy)  
-fb250044ff17        cyberreboot/poseidon-api:master        "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-8e898fd68c08        cyberreboot/vent-network-tap:master    "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-552f65d7a982        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-8dbabe78d1b9        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-e076452c1515        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-d0f406f240b1        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-6229e46723a9        cyberreboot/vent-rq-dashboard:master   "/bin/sh -c '(flask …"   Up 2 hours (healthy)  
-5c695040603b        cyberreboot/vent-redis:master          "docker-entrypoint.s…"   Up 2 hours (healthy)  
-004e5fdde96e        cyberreboot/vent-syslog:master         "/usr/sbin/syslog-ng…"   Up 2 hours (healthy)  
-c0cd7c1f881c        cyberreboot/vent-rabbitmq:master       "docker-entrypoint.s…"   Up 2 hours (healthy)  
+511f90c6ddd3        cyberreboot/crviz:master               "serve -s build -l 5…"   Up 2 hours (healthy)
+fb250044ff17        cyberreboot/poseidon-api:master        "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+8e898fd68c08        cyberreboot/vent-network-tap:master    "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+552f65d7a982        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+8dbabe78d1b9        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+e076452c1515        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+d0f406f240b1        cyberreboot/vent-rq-worker:master      "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+6229e46723a9        cyberreboot/vent-rq-dashboard:master   "/bin/sh -c '(flask …"   Up 2 hours (healthy)
+5c695040603b        cyberreboot/vent-redis:master          "docker-entrypoint.s…"   Up 2 hours (healthy)
+004e5fdde96e        cyberreboot/vent-syslog:master         "/usr/sbin/syslog-ng…"   Up 2 hours (healthy)
+c0cd7c1f881c        cyberreboot/vent-rabbitmq:master       "docker-entrypoint.s…"   Up 2 hours (healthy)
 d81f5509628c        cyberreboot/vent                       "/bin/sh -c '(flask …"   Up 2 hours (healthy)
 ```
+
+(NOTE: On our test systems it usually takes 1-2 minutes for all containers to spin up)
 
 If you performed the demo installation, you should also see the following Faucet-related containers running (NOTE: Faucet has not yet implemented docker-friendly health checks, so the "(healthy)" reference will not be shown):
 
 ```
-196f53632485        grafana/grafana:5.2.1                  "/run.sh"                Up 2 hours  
-cfb7d68b66e0        prom/prometheus:v2.3.1                 "/bin/prometheus --c…"   Up 2 hours  
-86f4188d67f6        faucet/gauge:latest                    "/usr/local/bin/entr…"   Up 2 hours  
-2e186573532e        faucet/event-adapter-rabbitmq          "/usr/local/bin/entr…"   Up 2 hours  
-c0652a6ccd44        influxdb:1.6-alpine                    "/entrypoint.sh infl…"   Up 2 hours  
-2a949b5b1687        faucet/faucet:latest                   "/usr/local/bin/entr…"   Up 2 hours  
+196f53632485        grafana/grafana:5.2.1                  "/run.sh"                Up 2 hours
+cfb7d68b66e0        prom/prometheus:v2.3.1                 "/bin/prometheus --c…"   Up 2 hours
+86f4188d67f6        faucet/gauge:latest                    "/usr/local/bin/entr…"   Up 2 hours
+2e186573532e        faucet/event-adapter-rabbitmq          "/usr/local/bin/entr…"   Up 2 hours
+c0652a6ccd44        influxdb:1.6-alpine                    "/entrypoint.sh infl…"   Up 2 hours
+2a949b5b1687        faucet/faucet:latest                   "/usr/local/bin/entr…"   Up 2 hours
 ```
 
 2. You should see "Poseidon successfully started, capturing logs..." in your syslog output:
@@ -181,7 +209,21 @@ To continue to test (assuming demo installation), please see `/opt/poseidon/docs
 
 
 ## Developing
+
+### Modifying Code that Runs in a Docker Container
+
 If installed as described above, poseidon's codebase will be at `/opt/poseidon`.  At this location, a `.vent_startup.yml` file can be edited to point to a fork of the original repository.  Develop and commit changes on the poseidon fork and use `poseidon -r` to reload and see your changes.
+You can verify that it's building against your fork by doing a `docker ps` and the poseidon container will be named off of your fork.
+
+### Modifying Code that Runs on the Host Machine
+
+To make changes to anything outside of the `poseidon` subdirectory you will need to build a new `.deb` and reinstall.
+```
+git clone <YOUR-POSEIDON-FORK>
+cd poseidon
+make build_debian
+sudo dpkg -i dist/poseidon*.deb
+```
 
 
 ## Related Components
@@ -195,18 +237,19 @@ If installed as described above, poseidon's codebase will be at `/opt/poseidon`.
 
 - [Authors](AUTHORS)
 - Blog posts:
-  - [SDN and the need for more (security) verbs](https://blog.cyberreboot.org/sdn-and-the-need-for-more-security-verbs-a6315935fca4)
-  - [Introducing Vent](https://blog.cyberreboot.org/introducing-vent-1d883727b624)
-  - [Deep Session Learning for Cyber Security](https://blog.cyberreboot.org/deep-session-learning-for-cyber-security-e7c0f6804b81)
-  - [Thanks to FAUCET, Poseidon Now Supports Switches Running OpenFlow 1.3](https://blog.cyberreboot.org/thanks-to-faucet-poseidon-now-supports-switches-running-openflow-1-3-e5489f2bc1f5)
-  - [Building a Software-Defined Network with Raspberry Pis and a Zodiac FX switch](https://blog.cyberreboot.org/building-a-software-defined-network-with-raspberry-pis-and-a-zodiac-fx-switch-97184032cdc1)
-  - [Poseidon with FAUCET SDN Controller](https://blog.cyberreboot.org/poseidon-with-faucet-sdn-controller-b5e78e46660b)
-  - [The Case for Detecting Lateral Movement](https://blog.cyberreboot.org/the-case-for-detecting-lateral-movement-2018ae631b04)
-  - [TCPDump, and the care and feeding of an intelligent SDN](https://blog.cyberreboot.org/tcpdump-and-the-care-and-feeding-of-an-intelligent-sdn-eca6e7506342)
-  - [A better way to visualize what’s on our networks?](https://blog.cyberreboot.org/a-better-way-to-visualize-whats-on-our-networks-4f87fd42da6)
-  - [CRviz: Scalable design for network visualization](https://blog.cyberreboot.org/crviz-scalable-design-for-network-visualization-14689133fd91)
-  - [CRviz: Initial Release](https://blog.cyberreboot.org/crviz-initial-release-45a3023e0e93)
+  - [Running Poseidon on a 100G Netowork](https://blog.cyberreboot.org/running-poseidon-on-a-100g-network-8def4dc8eecd)
   - [Using machine learning to classify devices on your network](https://blog.cyberreboot.org/using-machine-learning-to-classify-devices-on-your-network-e9bb98cbfdb6)
+  - [CRviz: Initial Release](https://blog.cyberreboot.org/crviz-initial-release-45a3023e0e93)
+  - [CRviz: Scalable design for network visualization](https://blog.cyberreboot.org/crviz-scalable-design-for-network-visualization-14689133fd91)
+  - [A better way to visualize what’s on our networks?](https://blog.cyberreboot.org/a-better-way-to-visualize-whats-on-our-networks-4f87fd42da6)
+  - [TCPDump, and the care and feeding of an intelligent SDN](https://blog.cyberreboot.org/tcpdump-and-the-care-and-feeding-of-an-intelligent-sdn-eca6e7506342)
+  - [The Case for Detecting Lateral Movement](https://blog.cyberreboot.org/the-case-for-detecting-lateral-movement-2018ae631b04)
+  - [Poseidon with FAUCET SDN Controller](https://blog.cyberreboot.org/poseidon-with-faucet-sdn-controller-b5e78e46660b)
+  - [Building a Software-Defined Network with Raspberry Pis and a Zodiac FX switch](https://blog.cyberreboot.org/building-a-software-defined-network-with-raspberry-pis-and-a-zodiac-fx-switch-97184032cdc1)
+  - [Thanks to FAUCET, Poseidon Now Supports Switches Running OpenFlow 1.3](https://blog.cyberreboot.org/thanks-to-faucet-poseidon-now-supports-switches-running-openflow-1-3-e5489f2bc1f5)
+  - [Deep Session Learning for Cyber Security](https://blog.cyberreboot.org/deep-session-learning-for-cyber-security-e7c0f6804b81)
+  - [Introducing Vent](https://blog.cyberreboot.org/introducing-vent-1d883727b624)
+  - [SDN and the need for more (security) verbs](https://blog.cyberreboot.org/sdn-and-the-need-for-more-security-verbs-a6315935fca4)
 - See the latest changes [here](CHANGELOG.md).
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - Want to contribute? Awesome! Issue a pull request or see more details [here](CONTRIBUTING.md).
